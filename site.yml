@@ -1,0 +1,6 @@
+---
+- name: Local Requirements
+  hosts: localhost
+  roles:
+    - 01_dependecies
+    - 02_configure_cloud_env

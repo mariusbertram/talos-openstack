@@ -1,0 +1,88 @@
+---
+- name: Test for existing Openstack config
+  openstack.cloud.config:
+  register: config
+
+- name: Check for default Cloud
+  assert:
+    that:
+      - >
+        'openstack' in clouds or (OPENSTACK_CLOUD | length > 0 and  OPENSTACK_CLOUD in clouds)
+  vars:
+    clouds: "{{ config | community.general.json_query('clouds[*].name') }}"
+
+- name: Check for Talos Image
+  openstack.cloud.image_info:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: "{{ TALOS_IMAGE }}"
+  register: image
+
+- block:
+    - name: Get Factory ID
+      ansible.builtin.uri:
+        url: "{{ TALOS_IMAGE_FACTORY_URL }}/schematics"
+        method: POST
+        src: schematic.yaml
+        remote_src: false
+        status_code: 201
+      register: FACTORY_ID
+    - name: Create tmp dir
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: talos
+        path: "{{ ansible_env.HOME }}"
+      register: TMP_PATH
+    - name: Download TALOS Image
+      ansible.builtin.get_url:
+        url: "{{ TALOS_IMAGE_FACTORY_URL }}/image/{{ FACTORY_ID.json.id }}/{{ TALOS_IMAGE_DOWNLOAD }}"
+        dest: "{{ TMP_PATH.path }}/talos.raw.xz"
+    - name: Unarchive
+      unarchive:
+        dest: "{{ TMP_PATH.path }}"
+        src: "{{ TMP_PATH.path }}/talos.raw.xz"
+      when: ansible_os_family != 'Darwin'
+    - name: Unarchive
+      ansible.builtin.command: "xz -d {{ TMP_PATH.path }}/talos.raw.xz"
+      when: ansible_os_family == 'Darwin'
+    - name: Upload Image
+      openstack.cloud.image:
+        name: "{{ TALOS_IMAGE }}"
+        cloud: "{{ OPENSTACK_CLOUD }}"
+        filename: "{{ TMP_PATH.path }}/talos.raw"
+        disk_format: raw
+        tags:
+          - talos
+          - k8s
+    - name: Cleanup TEMP DIR
+      file:
+        path: "{{ TMP_PATH.path }}"
+        state: absent
+        force: yes
+  when: image | length < 1
+
+- name: Try to install talosctl via pacakgemgr
+  ansible.builtin.package:
+    state: present
+    name: talosctl
+
+- name: Check for talosctl
+  ansible.builtin.command: which talosctl
+  ignore_errors: yes
+  register: which_talosctl
+
+- block:
+    - name: Get talosctl install script
+      ansible.builtin.get_url:
+        url: https://talos.dev/install
+        dest: /tmp/install
+        mode: 0750
+
+    - name: Run talos install script
+      become: yes
+      ansible.builtin.shell: /tmp/install
+
+    - name: Remove install script
+      file:
+        path: /tmp/install
+        state: absent
+  when: which_talosctl.stdout_lines | length < 1
