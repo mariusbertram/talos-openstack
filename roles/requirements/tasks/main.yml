@@ -26,24 +26,29 @@
         remote_src: false
         status_code: 201
       register: FACTORY_ID
+
     - name: Create tmp dir
       ansible.builtin.tempfile:
         state: directory
         prefix: talos
         path: "{{ ansible_env.HOME }}"
       register: TMP_PATH
+
     - name: Download TALOS Image
       ansible.builtin.get_url:
         url: "{{ TALOS_IMAGE_FACTORY_URL }}/image/{{ FACTORY_ID.json.id }}/{{ TALOS_IMAGE_DOWNLOAD }}"
         dest: "{{ TMP_PATH.path }}/talos.raw.xz"
+
     - name: Unarchive
       unarchive:
         dest: "{{ TMP_PATH.path }}"
         src: "{{ TMP_PATH.path }}/talos.raw.xz"
       when: ansible_os_family != 'Darwin'
+
     - name: Unarchive
       ansible.builtin.command: "xz -d {{ TMP_PATH.path }}/talos.raw.xz"
       when: ansible_os_family == 'Darwin'
+
     - name: Upload Image
       openstack.cloud.image:
         name: "{{ TALOS_IMAGE }}"
@@ -53,17 +58,19 @@
         tags:
           - talos
           - k8s
+
     - name: Cleanup TEMP DIR
       file:
         path: "{{ TMP_PATH.path }}"
         state: absent
         force: yes
-  when: image | length < 1
+  when: image.images | length < 1
 
 - name: Try to install talosctl via pacakgemgr
   ansible.builtin.package:
     state: present
     name: talosctl
+  ignore_errors: yes
 
 - name: Check for talosctl
   ansible.builtin.command: which talosctl

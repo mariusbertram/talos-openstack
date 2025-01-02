@@ -1,7 +1,0 @@
-OPENSTACK_CLOUD: openstack
-TALOS_IMAGE: talos-v1.9.1
-TALOS_IMAGE_FACTORY_URL: https://factory.talos.dev
-TALOS_VERSION: v1.9.1
-TALOS_ARCH: amd64
-TALOS_TARGET: openstack
-TALOS_IMAGE_DOWNLOAD: "{{ TALOS_VERSION }}/{{ TALOS_TARGET }}-{{ TALOS_ARCH }}.raw.xz"

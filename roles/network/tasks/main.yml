@@ -1,0 +1,92 @@
+---
+- name: Test for existing Openstack config
+  openstack.cloud.config:
+  register: config
+
+- name: Check for default Cloud
+  assert:
+    that:
+      - >
+        'openstack' in clouds or (OPENSTACK_CLOUD | length > 0 and  OPENSTACK_CLOUD in clouds)
+  vars:
+    clouds: "{{ config | community.general.json_query('clouds[*].name') }}"
+
+- name: Create talos network
+  openstack.cloud.network:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: talos-network
+
+- name: Create talos subnet
+  openstack.cloud.subnet:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: talos-subnet
+    network: talos-network
+    cidr: 172.16.250.0/24
+
+- name: Create talos router
+  openstack.cloud.router:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: talos-router
+    network: public
+    interfaces:
+      - talos-subnet
+
+- name: Create CP Loadbalancer
+  openstack.cloud.loadbalancer:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: talos-control-plane
+    vip_subnet: talos-subnet
+    assign_floating_ip: true
+    floating_ip_network: public
+
+- name: Create talos api LB Listener
+  openstack.cloud.lb_listener:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: talos-api-listener
+    protocol: TCP
+    protocol_port: 50000
+    load_balancer: talos-control-plane
+
+- name: Create k8s api LB Listener
+  openstack.cloud.lb_listener:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: k8s-api-listener
+    protocol: TCP
+    protocol_port: 6443
+    load_balancer: talos-control-plane
+
+- name: Create talos api lb pool
+  openstack.cloud.lb_pool:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: talos-api-pool
+    listener: talos-api-listener
+    protocol: TCP
+    lb_algorithm: ROUND_ROBIN
+
+- name: Create k8s api lb pool
+  openstack.cloud.lb_pool:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: k8s-api-pool
+    listener: k8s-api-listener
+    protocol: TCP
+    lb_algorithm: ROUND_ROBIN
+
+- name: Creas talos api lb healthmonitor
+  openstack.cloud.lb_health_monitor:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: talos-api-health
+    delay: 10
+    max_retries: 10
+    health_monitor_timeout: 15
+    type: TCP
+    pool: talos-api-pool
+
+- name: Creas k8s api lb healthmonitor
+  openstack.cloud.lb_health_monitor:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: k8s-api-health
+    delay: 10
+    max_retries: 10
+    health_monitor_timeout: 15
+    type: TCP
+    pool: k8s-api-pool

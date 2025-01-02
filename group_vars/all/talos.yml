@@ -1,0 +1,8 @@
+numb_cp: 3
+numb_wrk: 3
+TALOS_IMAGE: "talos-{{ TALOS_VERSION }}"
+TALOS_IMAGE_FACTORY_URL: https://factory.talos.dev
+TALOS_VERSION: v1.9.1
+TALOS_ARCH: amd64
+TALOS_TARGET: openstack
+TALOS_IMAGE_DOWNLOAD: "{{ TALOS_VERSION }}/{{ TALOS_TARGET }}-{{ TALOS_ARCH }}.raw.xz"

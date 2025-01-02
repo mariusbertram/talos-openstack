@@ -1,0 +1,84 @@
+---
+- name: Create talos folder
+  ansible.builtin.file:
+    path: "{{ ansible_user_dir }}/talos"
+    state: directory
+    mode: 0750
+
+- name: Get LB Public IP
+  openstack.cloud.resources:
+    type: load_balancer
+    service: load_balancer
+  register: lb
+
+- name: Get Floating IP
+  openstack.cloud.floating_ip_info:
+  register: floating
+
+- name: Create talos configuration
+  ansible.builtin.set_fact:
+    fixed_ip: "{{ lb | json_query('resources[?name==`talos-control-plane`].vip_address') | first }}"
+
+- name: Set public IP
+  ansible.builtin.set_fact:
+    public_ip: "{{ floating | json_query(query) | first }}"
+  vars:
+    query: "floating_ips[?fixed_ip_address=='{{  fixed_ip  }}'].floating_ip_address"
+
+- name: Render path template
+  ansible.builtin.template:
+    dest: "{{ ansible_user_dir }}/talos/patch.yaml"
+    src: patch.yaml.j2
+
+- name: generate talos config
+  ansible.builtin.command:
+    chdir: "{{ ansible_user_dir }}/talos"
+    cmd: "talosctl gen config talos-k8s-openstack-tutorial https://{{ public_ip }}:6443 --config-patch @patch.yaml"
+  ignore_errors: yes
+
+- name: Set Number of Controlleplanes
+  ansible.builtin.set_fact:
+    cp_list: "{{ range(1, numb_cp + 1) | list }}"
+
+- name: Set Number of Worker
+  ansible.builtin.set_fact:
+    wrk_list: "{{ range(1, numb_wrk + 1) | list }}"
+
+- name: Slurp cp-conf
+  ansible.builtin.slurp:
+    src: "{{ ansible_user_dir }}/talos/controlplane.yaml"
+  register: cp_conf
+
+- name: Slurp worker conf
+  ansible.builtin.slurp:
+    src: "{{ ansible_user_dir }}/talos/worker.yaml"
+  register: wrk_conf
+
+- name: Create CPs
+  ansible.builtin.include_tasks: controlplane.yml
+  loop: "{{ cp_list }}"
+
+- name: Create Worker
+  openstack.cloud.server:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: "talos-wrk-{{ item }}"
+    image: "{{ TALOS_IMAGE }}"
+    flavor: m1.medium
+    volume_size: 50
+    nics:
+      - net-name: talos-network
+    userdata: "{{ wrk_conf.content | b64decode }}"
+    auto_ip: false
+    security_groups:
+      - default
+  loop: "{{ wrk_list }}"
+
+- name: Bootstrap Cluster
+  ansible.builtin.command:
+    chdir: "{{ ansible_user_dir }}/talos"
+    cmd: "talosctl --talosconfig talosconfig bootstrap -e {{ public_ip }} -n {{ public_ip }}"
+
+- name: Get kubeconfig
+  ansible.builtin.command:
+    chdir: "{{ ansible_user_dir }}/talos"
+    cmd: "talosctl --talosconfig talosconfig -e {{ public_ip }} -n {{ public_ip }} kubeconfig ./kubeconfig"

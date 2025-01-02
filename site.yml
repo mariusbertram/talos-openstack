@@ -2,5 +2,6 @@
 - name: Local Requirements
   hosts: localhost
   roles:
-    - 01_dependecies
-    - 02_configure_cloud_env
+    - requirements
+    - network
+    - deploy_talos

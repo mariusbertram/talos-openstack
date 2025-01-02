@@ -1,0 +1,29 @@
+---
+- name: Create CPs
+  openstack.cloud.server:
+    cloud: "{{ OPENSTACK_CLOUD }}"
+    name: "talos-cp-{{ item }}"
+    image: "{{ TALOS_IMAGE }}"
+    flavor: m1.medium
+    volume_size: 50
+    nics:
+      - net-name: talos-network
+    userdata: "{{ cp_conf.content | b64decode }}"
+    auto_ip: false
+    security_groups:
+      - default
+  register: cp
+
+- name: Add CPs to Loadbalancer
+  openstack.cloud.lb_member:
+    pool: talos-api-pool
+    name: "talos-cp-{{ item }}"
+    address: "{{ cp.server.addresses['talos-network'] | json_query('[?\"OS-EXT-IPS:type\"==`fixed`].addr') | first }}"
+    protocol_port: 50000
+
+- name: Add CPs to Loadbalancer
+  openstack.cloud.lb_member:
+    pool: k8s-api-pool
+    name: "talos-cp-{{ item }}"
+    address: "{{ cp.server.addresses['talos-network'] | json_query('[?\"OS-EXT-IPS:type\"==`fixed`].addr') | first }}"
+    protocol_port: 6443
